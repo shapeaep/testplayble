@@ -4453,7 +4453,7 @@ window.glbBase64_animgl_3 = "data:model/gltf-binary;base64,Z2xURgIAAADEKgYAaJACA
       const loader = new THREE.GLTFLoader();
       loader.setDRACOLoader(dracoLoader);
 
-      loader.load("assets/ar_1.glb", (gltf) => {
+      loader.load(window.glbBase64_ar_1 || "assets/ar_1.glb", (gltf) => {
         hands = gltf.scene;
         hands.scale.set(0.35,0.35,0.35);
         hands.position.set(0.1,-0.5,-0.15);
