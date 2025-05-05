@@ -1,42 +1,6 @@
 <!DOCTYPE html><html lang="ru"><head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, user-scalable=no">
   <title>Zombie Health Bars with Auto Fire</title>
-  <!-- MRAID meta tags -->
-  <meta name="ad.size" content="{{ad.size}}">
-  <meta name="ad.orientation" content="landscape">
-
-  <!-- Inject MRAID SDK -->
-  <script>
-    (function() {
-      var headNode = document.getElementsByTagName("head")[0];
-      var script = document.createElement("script");
-      script.setAttribute("type", "text/javascript");
-      script.setAttribute("charset", "utf-8");
-      script.setAttribute("src", "mraid.js");
-      headNode.appendChild(script);
-
-      // Expose CTA for ad click handling
-      document.CTA = {
-        onClick: function(store) {
-          if (store === undefined) {
-            store = navigator.userAgent.toLowerCase().indexOf("android") > -1 ? "google" : "apple";
-          }
-          var urls = {
-            "google": "https://play.google.com/store/apps/details?id=com.glu.zbs",
-            "apple": "https://apps.apple.com/us/app/id1090501422"
-          };
-          var url = urls[store];
-          console.log("CTA clicked (" + store + "): " + url);
-          if (window.mraid && mraid.open) {
-            mraid.open(url);
-          } else {
-            window.open(url, '_blank');
-          }
-        }
-      };
-    })();
-  </script>
   <style>
     html, body { margin: 0; overflow: hidden; background: black; font-family: sans-serif; }
     #startButton {
