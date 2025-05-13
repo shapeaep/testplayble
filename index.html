@@ -72,8 +72,8 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
             store = navigator.userAgent.toLowerCase().indexOf("android") > -1 ? "google" : "apple";
           }
           var urls = {
-            "google": "https://play.google.com/store/apps/details?id=com.glu.zbs",
-            "apple": "https://apps.apple.com/us/app/id1090501422"
+            "google": "https://play.google.com/store/apps/details?id=games.my.zombie.shooter",
+            "apple": "https://apps.apple.com/pl/app/zombie-state-survival-shooter/id6451382835"
           };
           var url = urls[store];
           if (window.mraid && mraid.open) {
@@ -4554,7 +4554,7 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
     let gunSoundLastPlayed = 0; // Время последнего воспроизведения звука выстрела
     let muzzleFlash;
     let mapModel = null; // Переменная для хранения ссылки на модель карты
-    let cameraFov = 70;
+    let cameraFov = 65;
     let mapZ = 1;
     let mapScaleZ = 1.3;
     let animationInitialized = false;
@@ -4664,8 +4664,8 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
     // Добавьте эти новые константы в начало файла, где находятся другие константы анимации
     const animationOffsets = [0.98, 0.77, 1.36, 0.19, 1.48];
     const zombieSpeedFactor = 2.2;
-    const HIT_ANIMATION_DURATION = 0.4;
-    const HIT_BLEND_IN_DURATION = 0.17;
+    const HIT_ANIMATION_DURATION = 0.1;
+    const HIT_BLEND_IN_DURATION = 0.25;
     const HIT_BLEND_OUT_DURATION = 0.3;
     const HIT_SPEED_MULTIPLIER = 1.9;
     const ZOMBIE_MOVE_SPEED = 1; // Скорость движения зомби к игроку
@@ -4751,41 +4751,273 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
     });
 
     
-    // Инициализация LoadingManager и настройка обработчиков событий
-    function initLoadingManager() {
-      loadingManager = new THREE.LoadingManager();
+// Комплексное решение для полной загрузки зомби перед скрытием экрана загрузки
+
+// Глобальный флаг готовности зомби
+let zombiesFullyLoaded = false;
+
+function initLoadingManager() {
+  loadingManager = new THREE.LoadingManager();
+  
+  // Обработчик прогресса загрузки
+  loadingManager.onProgress = function(url, itemsLoaded, itemsTotal) {
+    const progress = Math.floor((itemsLoaded / itemsTotal) * 100);
+    loadingProgressBar.style.width = progress + '%';
+    loadingPercent.textContent = progress + '%';
+  };
+  
+    // Модифицируем обработчик завершения загрузки
+    loadingManager.onLoad = function() {
+      // Отмечаем, что основные ассеты загружены
+      assetsLoaded = true;
       
-      loadingManager.onProgress = function(url, itemsLoaded, itemsTotal) {
-        const progress = Math.floor((itemsLoaded / itemsTotal) * 100);
-        loadingProgressBar.style.width = progress + '%';
-        loadingPercent.textContent = progress + '%';
-      };
+      // Устанавливаем полосу загрузки в 75% (резервируем 25% для предзагрузки зомби)
+      loadingProgressBar.style.width = '75%';
+      loadingPercent.textContent = '75%';
       
-      loadingManager.onLoad = function() {
-        assetsLoaded = true;
-        
-        // Скрываем экран загрузки
-        loadingScreen.style.display = 'none';
-        
-        // Добавляем отображение инструкции для начала игры
-        showStartPrompt();
-        
-        // Инициализируем зафриженную сцену
-        initFrozenScene();
-        
-        // Показываем HUD (счетчики патронов и т.д.)
-        document.getElementById("hud").style.display = "block";
-        
-        // Добавляем обработчики для запуска игры
-        document.addEventListener('click', startGameOnFirstInteraction);
-        document.addEventListener('touchstart', startGameOnFirstInteraction);
-      };
+      // Меняем текст
+      loadingPercent.textContent = 'Подготовка игры...';
       
-      loadingManager.onError = function(url) {
-        loadingPercent.textContent = 'Ошибка загрузки!';
-      };
+      console.log("Основные ассеты загружены, начинаем предзагрузку зомби...");
+      
+      // Проверяем, существуют ли необходимые функции
+      if (typeof initFrozenScene !== 'function') {
+        console.error("Функция initFrozenScene не найдена!");
+        // Показываем сообщение об ошибке и скрываем экран загрузки
+        loadingPercent.textContent = 'Ошибка инициализации!';
+        setTimeout(() => loadingScreen.style.display = 'none', 1000);
+        return;
+      }
+      
+      // Предзагрузка зомби с мониторингом прогресса
+      preloadZombiesWithProgression();
+    };
+    
+    // Обработчик ошибок
+    loadingManager.onError = function(url) {
+      loadingPercent.textContent = 'Ошибка загрузки!';
+      console.error("Ошибка загрузки ресурса:", url);
+    };
+  }
+
+  // Функция предзагрузки зомби с отображением прогресса
+    function preloadZombiesWithProgression() {
+      // Check if zombie templates are loaded
+      if (!window.zombieTemplates || 
+          (!window.zombieTemplates.male && !window.zombieTemplates.female)) {
+        
+        console.warn("Zombie templates not loaded yet, waiting...");
+        
+        // Wait for templates to load
+        let templateCheckAttempt = 0;
+        const waitForTemplates = setInterval(() => {
+          templateCheckAttempt++;
+          
+          // Update loading indicator
+          const loadingProgress = 75 + Math.min(templateCheckAttempt * 5, 15);
+          loadingProgressBar.style.width = loadingProgress + '%';
+          loadingPercent.textContent = 'Loading zombie templates...';
+          
+          if (window.zombieTemplates && 
+              (window.zombieTemplates.male || window.zombieTemplates.female)) {
+            // Templates loaded
+            clearInterval(waitForTemplates);
+            console.log("Zombie templates loaded, creating zombies");
+            proceedWithZombieCreation();
+          }
+          
+          // If after 10 attempts templates still not loaded, continue anyway
+          if (templateCheckAttempt > 10) {
+            clearInterval(waitForTemplates);
+            console.warn("Failed to wait for zombie templates, continuing without them");
+            finishLoading();
+          }
+        }, 200);
+      } else {
+        // Templates already loaded, proceed to create zombies
+        console.log("Zombie templates already loaded, creating zombies");
+        proceedWithZombieCreation();
+      }
     }
 
+  // Функция создания зомби за экраном загрузки
+    function proceedWithZombieCreation() {
+      // Set loading bar to 90%
+      loadingProgressBar.style.width = '90%';
+      loadingPercent.textContent = 'Creating zombies...';
+      
+      try {
+        // Initialize scene behind loading screen
+        // IMPORTANT: Temporarily replace the animation function to prevent zombies from moving
+        const originalAnimate = window.animate;
+        window.animate = function() {
+          // Empty stub to prevent movement
+        };
+        
+        // Boost loading screen z-index
+        loadingScreen.style.zIndex = "10000";
+        
+        // Initialize the scene but don't start animation (since we replaced the animate function)
+        console.log("Initializing frozen scene...");
+        initFrozenScene();
+        
+        // IMPORTANT: Mark the first wave as spawned so it doesn't spawn again
+        if (window.simpleZombieSystem) {
+          window.simpleZombieSystem.firstWaveSpawned = true;
+        }
+        
+        // Freeze all created zombies
+        console.log("Freezing zombies...");
+        zombies.forEach(zombie => {
+          if (zombie && zombie.mixer) {
+            // Save original animation speed
+            zombie.originalTimeScale = zombie.mixer.timeScale;
+            // Stop animation
+            zombie.mixer.timeScale = 0;
+            
+            // Save original movement speed
+            if (zombie.moveSpeed) {
+              zombie.originalMoveSpeed = zombie.moveSpeed;
+              zombie.moveSpeed = 0;
+            }
+            
+            // Mark as preloaded
+            zombie.isPreloaded = true;
+          }
+        });
+        
+        // Restore original animate function
+        window.animate = originalAnimate;
+        
+        // Mark zombies as fully loaded
+        zombiesFullyLoaded = true;
+        
+        // Finish loading
+        finishLoading();
+      } catch (error) {
+        console.error("Error creating zombies:", error);
+        // In case of error, just proceed to finish loading
+        finishLoading();
+      }
+    }
+
+  // Функция завершения загрузки
+  function finishLoading() {
+    // Устанавливаем полосу загрузки в 100%
+    loadingProgressBar.style.width = '100%';
+    loadingPercent.textContent = 'Готово!';
+    
+    console.log("Предзагрузка завершена, ожидаем еще секунду...");
+    
+    // Добавляем последнюю задержку в 1 секунду
+    setTimeout(() => {
+      // Проверяем, были ли зомби успешно загружены
+      if (zombiesFullyLoaded) {
+        console.log("Зомби успешно предзагружены перед скрытием экрана загрузки");
+      } else {
+        console.warn("Зомби не были полностью предзагружены");
+      }
+      
+      // Показываем HUD и подсказку для начала игры
+      document.getElementById("hud").style.display = "block";
+      showStartPrompt();
+      
+      // Добавляем обработчики для запуска игры
+      document.addEventListener('click', startGameOnFirstInteraction);
+      document.addEventListener('touchstart', startGameOnFirstInteraction);
+      
+      // Плавно скрываем экран загрузки
+      loadingScreen.style.transition = "opacity 0.5s ease-out";
+      loadingScreen.style.opacity = "0";
+      
+      // После завершения анимации полностью скрываем элемент
+      setTimeout(() => {
+        loadingScreen.style.display = "none";
+        console.log("Экран загрузки скрыт, игра готова");
+      }, 500);
+    }, 1000);
+  }
+
+  // Модифицируем startGameOnFirstInteraction чтобы "разморозить" предзагруженных зомби
+      window.startGameOnFirstInteraction = function(e) {
+        // Prevent event bubbling to avoid immediate shooting
+        e.preventDefault();
+        e.stopPropagation();
+        
+        // Remove event handlers to prevent function from being called again
+        document.removeEventListener('click', startGameOnFirstInteraction);
+        document.removeEventListener('touchstart', startGameOnFirstInteraction);
+        
+        // Initialize audio after first interaction
+        initializeAudio();
+        
+        // Remove start game prompt
+        const prompt = document.getElementById('start-prompt');
+        if (prompt) document.body.removeChild(prompt);
+        
+        // Unfreeze zombies BEFORE starting the game
+        console.log("Unfreezing preloaded zombies...");
+        
+        for (let i = 0; i < zombies.length; i++) {
+          const zombie = zombies[i];
+          
+          if (zombie && zombie.isPreloaded) {
+            // Restore animation speed
+            if (zombie.mixer && zombie.originalTimeScale !== undefined) {
+              zombie.mixer.timeScale = zombie.originalTimeScale;
+              // Update mixer immediately so animation starts playing
+              zombie.mixer.update(0.01);
+            }
+            
+            // Restore movement speed
+            if (zombie.originalMoveSpeed !== undefined) {
+              zombie.moveSpeed = zombie.originalMoveSpeed;
+            }
+            
+            // Remove preloaded flag
+            delete zombie.isPreloaded;
+          }
+        }
+        
+        // Mark first wave as spawned
+        if (window.simpleZombieSystem) {
+          window.simpleZombieSystem.firstWaveSpawned = true;
+        }
+        
+        // Small delay before starting game to prevent event conflicts
+        setTimeout(() => {
+          // Start the game
+          startGame();
+          
+          // Start checking for second wave
+          if (window.simpleZombieSystem) {
+            window.simpleZombieSystem.startChecking();
+          }
+          
+        }, 100);
+      };
+
+  // Модифицируем систему для работы с предзагруженными зомби
+  const originalSpawnFirstWave = window.simpleZombieSystem ? 
+    window.simpleZombieSystem.spawnFirstWave : null;
+
+  if (window.simpleZombieSystem && originalSpawnFirstWave) {
+    window.simpleZombieSystem.spawnFirstWave = function() {
+      console.log("Запрос на спавн первой волны");
+      
+      // Проверяем, есть ли уже предзагруженные зомби
+      const predloadedZombiesCount = zombies.filter(z => z && z.isPreloaded).length;
+      
+      if (predloadedZombiesCount > 0) {
+        console.log(`Найдено ${predloadedZombiesCount} предзагруженных зомби, не создаем новых`);
+        this.firstWaveSpawned = true;
+      } else {
+        // Если нет предзагруженных зомби, вызываем оригинальную функцию
+        console.log("Предзагруженных зомби не найдено, вызываем оригинальный спавн");
+        originalSpawnFirstWave.apply(this);
+      }
+    };
+  }
     // Инициализируем LoadingManager при загрузке страницы
     initLoadingManager();
     
@@ -4815,9 +5047,6 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
         weapon.name = "tempWeapon";
         camera.add(weapon);
       }
-      
-      // Создаем зомби для статической сцены
-      createZombiesDirectly();
       
       // Применяем начальную анимацию для рук и обновляем миксер один раз
       if (handsMixer && handAnimations["Arms_Idle"]) {
@@ -4976,6 +5205,7 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
       setTimeout(() => {
         // Запускаем игру
         startGame();
+        
       }, 100);
     }
     
@@ -4998,13 +5228,13 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
     function initBaseScene() {
       scene = new THREE.Scene();
       scene.background = new THREE.Color(0x6b7c8b);
-      scene.fog = new THREE.Fog(0x6b7c8b, 10, 60);
+      scene.fog = new THREE.Fog(0x6b7c8b, 7, 16);
 
       cameraYaw = new THREE.Object3D(); scene.add(cameraYaw);
       cameraPitch = new THREE.Object3D(); cameraYaw.add(cameraPitch);
       camera = new THREE.PerspectiveCamera(cameraFov, innerWidth/innerHeight, 0.01, 1000);
       cameraPitch.add(camera);
-      cameraYaw.position.set(0,1.5,0);
+      cameraYaw.position.set(0,1.5,-0.8);
 
       renderer = new THREE.WebGLRenderer({ antialias: true });
       renderer.setSize(innerWidth, innerHeight);
@@ -5014,18 +5244,18 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
       scene.add(new THREE.AmbientLight(0xffffff, 1));
 
       // Основной направленный свет
-      const mainLight = new THREE.DirectionalLight(0xffffff, 2);
-      mainLight.position.set(5, 10, 5);
+      const mainLight = new THREE.DirectionalLight(0xffffff, 5);
+      mainLight.position.set(0, 0, 0);
       scene.add(mainLight);
 
       // Дополнительный направленный свет
-      const frontLight = new THREE.DirectionalLight(0xffffff, 1.2);
-      frontLight.position.set(0, 2, 15);
+      const frontLight = new THREE.DirectionalLight(0xffffff, 5);
+      frontLight.position.set(0, 0, 0);
       scene.add(frontLight);
 
       // Дополнительный свет для подсветки теней
-      const fillLight = new THREE.DirectionalLight(0xffffff, 0.7);
-      fillLight.position.set(-5, 3, 0);
+      const fillLight = new THREE.DirectionalLight(0xffffff, 5);
+      fillLight.position.set(0, 0, 0);
       scene.add(fillLight);
     }
     
@@ -5433,7 +5663,7 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
       });
     }
 
-    let zombieSeed = 125215; // Начальное значение, которое вы можете менять
+    let zombieSeed = 1252152; // Начальное значение, которое вы можете менять
 
     // Предварительно сгенерированные значения waypoint threshold на основе сида
     const thresholdValues = [];
@@ -5488,7 +5718,7 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
     }
 
     // Функция для прямой загрузки зомби
-    const ZOMBIE_SPAWN_INTERVAL = 1000; // Интервал между спавном зомби (в миллисекундах)
+    const ZOMBIE_SPAWN_INTERVAL = 100; // Интервал между спавном зомби (в миллисекундах)
     const MAX_ZOMBIES = 4; // Максимальное количество зомби для создания
 
         // Делаем функции доступными глобально
@@ -5497,6 +5727,539 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
 
     // Генерируем начальный набор значений
     generateThresholdValues(zombieSeed);
+
+    const ZOMBIE_RUN_SPEED = 3; // Скорость движения бегущих зомби
+    const ZOMBIE_WALK_SPEED = 1.0; // Скорость движения ходящих зомби
+    let RUN_ANIMATION_SPEED_MULTIPLIER = .35; // Множитель скорости анимации бега (можно менять)
+    let RUN_ZOMBIE_RATIO = 1; // Соотношение бегущих зомби (0.5 = 50%)
+
+    // Функция для установки множителя скорости анимации бега
+    function setRunAnimationSpeed(multiplier) {
+      if (typeof multiplier === 'number' && multiplier > 0) {
+        RUN_ANIMATION_SPEED_MULTIPLIER = multiplier;
+        
+        // Обновляем скорость анимации у уже существующих бегущих зомби
+        zombies.forEach(z => {
+          if (z.state === 'run' && z.moveType === 'run' && z.actions.run) {
+            z.actions.run.setEffectiveTimeScale(RUN_ANIMATION_SPEED_MULTIPLIER * zombieSpeedFactor);
+          }
+        });
+        
+        return `Множитель скорости бега установлен на ${RUN_ANIMATION_SPEED_MULTIPLIER}`;
+      }
+      return `Ошибка: множитель должен быть положительным числом`;
+    }
+
+    // Функция для установки соотношения бегущих зомби
+    function setRunZombieRatio(ratio) {
+      if (typeof ratio === 'number' && ratio >= 0 && ratio <= 1) {
+        RUN_ZOMBIE_RATIO = ratio;
+        return `Соотношение бегущих зомби установлено на ${ratio * 100}%`;
+      }
+      return `Ошибка: соотношение должно быть числом от 0 до 1`;
+    }
+
+    function getZombieMovementType() {
+      return Math.random() < RUN_ZOMBIE_RATIO ? 'run' : 'walk';
+    }
+
+    // Делаем функции доступными глобально
+    window.setRunAnimationSpeed = setRunAnimationSpeed;
+    window.setRunZombieRatio = setRunZombieRatio;
+    window.getRunZombieRatio = function() { return RUN_ZOMBIE_RATIO; };
+
+
+// Complete implementation of the direct zombie spawning system
+
+// 1. DIRECT ZOMBIE MOVEMENT SYSTEM
+
+// Function to spawn zombies in front of the player in a semicircle
+    function spawnZombiesInFrontOfPlayer(count = 5, spawnRadius = 10, minDistance = 5) {
+      // Ensure zombie templates are loaded
+      if (!window.zombieTemplates || 
+          (!window.zombieTemplates.male && !window.zombieTemplates.female)) {
+        console.error("Zombie templates not loaded");
+        return;
+      }
+      
+      // Get player position and forward direction
+      const playerPos = cameraYaw.position.clone();
+      const playerForward = new THREE.Vector3(0, 0, -1);
+      playerForward.applyQuaternion(cameraYaw.quaternion);
+      playerForward.y = 0; // Keep zombies on the ground
+      playerForward.normalize();
+      
+      // Pre-calculate horizontal offsets for even distribution between -1 and 1
+      const horizontalOffsets = [];
+      for (let i = 0; i < count; i++) {
+        // Равномерно распределяем смещения между -1 и 1
+        const offset = -1 + (2 * i / (count - 1));
+        horizontalOffsets.push(offset);
+      }
+      
+      // Перемешиваем смещения для разнообразия
+      for (let i = horizontalOffsets.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [horizontalOffsets[i], horizontalOffsets[j]] = [horizontalOffsets[j], horizontalOffsets[i]];
+      }
+      
+      // Function to spawn a single zombie with delay
+      function spawnNextZombie(index) {
+        if (index >= count) return; // Stop when all zombies are spawned
+        
+        // Calculate spawn position in an arc in front of player
+        const angle = -Math.PI / 2 + (Math.PI / (count + 1)) * (index + 1); // Distribute across a semicircle
+        
+        // Calculate position at specified radius
+        const distance = minDistance + Math.random() * (spawnRadius - minDistance);
+        const spawnPos = new THREE.Vector3();
+        
+        // Base position from player's position and forward direction
+        spawnPos.copy(playerPos);
+        
+        // Offset direction using angle around player's forward direction
+        const spawnDir = new THREE.Vector3();
+        spawnDir.copy(playerForward);
+        
+        // Rotate direction based on angle
+        const quaternion = new THREE.Quaternion();
+        quaternion.setFromAxisAngle(new THREE.Vector3(0, 1, 0), angle);
+        spawnDir.applyQuaternion(quaternion);
+        
+        // Apply distance
+        spawnPos.addScaledVector(spawnDir, distance);
+        
+        // Create zombie at calculated position with assigned horizontal offset
+        const zombie = createDirectZombie(spawnPos.x, spawnPos.z);
+        
+        // Assign pre-calculated horizontal offset to the spawned zombie
+        if (zombie) {
+          zombie.horizontalOffset = horizontalOffsets[index];
+          console.log(`Zombie ${index+1} created with horizontal offset: ${zombie.horizontalOffset.toFixed(2)}`);
+        }
+        
+        // Schedule next zombie spawn
+        setTimeout(() => {
+          spawnNextZombie(index + 1);
+        }, 300); // 300ms delay between spawns
+      }
+      
+      // Start spawning process
+      spawnNextZombie(0);
+    }
+
+    function createDirectZombie(x, z) {
+      // Choose random zombie type
+      const zombieType = Math.random() < 0.5 ? "male" : "female";
+      const template = window.zombieTemplates[zombieType];
+      
+      // Choose movement type based on the ratio
+      const moveType = getZombieMovementType();
+      
+      // Clone the model from template
+      const mesh = template.scene.clone();
+      const clips = template.animations;
+      const mixer = new THREE.AnimationMixer(mesh);
+      
+      // Find all needed animations
+      const run = clips.find(c => c.name.toLowerCase().includes('run'));
+      const walk = clips.find(c => c.name.toLowerCase().includes('walk'));
+      const attack = clips.find(c => c.name.toLowerCase().includes('attack'));
+      const death = clips.find(c => c.name.toLowerCase().includes('death'));
+      const hit = clips.find(c => c.name.toLowerCase().includes('hit'));
+      const idle = clips.find(c => c.name.toLowerCase().includes('idle'));
+      
+      // Create actions for all animations
+      const ra = run ? mixer.clipAction(run) : null;
+      const wa = walk ? mixer.clipAction(walk) : null;
+      const aa = mixer.clipAction(attack);
+      const da = mixer.clipAction(death);
+      const hi = mixer.clipAction(hit);
+      const ia = idle ? mixer.clipAction(idle) : null; 
+      
+      // Configure run animation speed
+      if (ra) {
+        ra.setEffectiveTimeScale(moveType === 'run' ? RUN_ANIMATION_SPEED_MULTIPLIER * zombieSpeedFactor : zombieSpeedFactor);
+      }
+      
+      // Configure hit animation
+      hi.setLoop(THREE.LoopOnce);
+      hi.clampWhenFinished = true;
+      hi.setEffectiveTimeScale(HIT_SPEED_MULTIPLIER * zombieSpeedFactor);
+      
+      // Configure death animation
+      da.setLoop(THREE.LoopOnce);
+      da.clampWhenFinished = true;
+      
+      // Set position and rotation
+      mesh.scale.set(1, 1, 1);
+      mesh.position.set(x, 0, z);
+      scene.add(mesh);
+      
+      // Look at player initially
+      mesh.lookAt(cameraYaw.position.x, mesh.position.y, cameraYaw.position.z);
+      
+      // Configure materials and visibility
+      mesh.traverse(o => {
+        o.frustumCulled = false;
+        if (o.isMesh && o.material) {
+          o.material.side = THREE.DoubleSide;
+        }
+      });
+      
+      // Start animation based on movement type
+      const currentAnimation = moveType === 'run' ? ra : wa;
+      if (currentAnimation) {
+        currentAnimation.play();
+        currentAnimation.time = Math.random() * 2; // Random offset
+      }
+      
+      // Update mixer once to apply initial pose
+      mixer.update(0.01);
+      mixer.timeScale = zombieSpeedFactor;
+      
+      // Create bounding box
+      const box = new THREE.Box3().setFromObject(mesh);
+      const helper = new THREE.Box3Helper(box, 0x00ff00);
+      helper.material.transparent = true;
+      helper.material.opacity = 0.5;
+      helper.visible = false; // Hide for gameplay, show only for debugging
+      scene.add(helper);
+      
+      // Create health bar
+      const hb = document.createElement('div');
+      hb.className = 'health-bar';
+      const hf = document.createElement('div');
+      hf.className = 'health-fill';
+      hb.appendChild(hf);
+      healthBarsContainer.appendChild(hb);
+      
+      // Create anchor point
+      const head = findHeadBone(mesh);
+      const anchor = head || new THREE.Object3D();
+      if (!head) {
+        const bb = new THREE.Box3().setFromObject(mesh);
+        anchor.position.set(0, bb.max.y + 0.2, 0);
+        mesh.add(anchor);
+      }
+      
+      // Генерируем случайное смещение по горизонтали от -1 до 1
+      const horizontalOffset = Math.random() * 2 - 1;
+      
+      // Add zombie to the array with direct movement settings
+      zombies.push({
+        mesh,
+        mixer,
+        box,
+        helper,
+        hp: 200,
+        healthBar: hb,
+        healthFill: hf,
+        anchorPoint: anchor,
+        state: moveType,
+        previousState: moveType,
+        hitTime: 0,
+        isHit: false,
+        zombieType: zombieType,
+        moveType: moveType,
+        moveSpeed: moveType === 'run' ? ZOMBIE_RUN_SPEED : ZOMBIE_WALK_SPEED,
+        actions: { run: ra, walk: wa, attack: aa, death: da, hit: hi, idle: ia },
+        activeAction: currentAnimation,
+        // Direct movement flags and counters
+        useDirectMovement: true,
+        attackCount: 0,
+        damageDealt: false,
+        isResting: false,
+        lastAttackTime: 0,
+        // Сохраняем смещение для использования в логике движения
+        horizontalOffset: horizontalOffset
+      });
+      
+      return zombies[zombies.length - 1];
+    }
+
+    // Function to handle direct zombie movement (will be called in animate)
+    function updateDirectZombieMovement(zombie, delta) {
+      if (!zombie.useDirectMovement || zombie.state === 'dead' || zombie.isHit) return;
+      
+      const playerPos = cameraYaw.position;
+      const zombiePos = zombie.mesh.position;
+      
+      // Initialize counters if they don't exist (as a safety measure)
+      if (zombie.attackCount === undefined) zombie.attackCount = 0;
+      if (zombie.damageDealt === undefined) zombie.damageDealt = false;
+      if (zombie.isResting === undefined) zombie.isResting = false;
+      if (!zombie.lastAttackTime) zombie.lastAttackTime = 0;
+      if (zombie.horizontalOffset === undefined) {
+        // Если у зомби не было горизонтального смещения, генерируем его
+        zombie.horizontalOffset = Math.random() * 2 - 1;
+      }
+      
+      // FIRST CHECK: should zombie transition to idle due to max attacks
+      if (zombie.attackCount >= ZOMBIE_MAX_ATTACKS && !zombie.isResting) {
+        // Zombie reached max attacks - transition to idle forever
+        zombie.isResting = true;
+        
+        // Use smooth transition to idle animation
+        if (zombie.actions.idle) {
+          fadeToAction(zombie, 'idle', 0.7);
+        } else {
+          // Fallback if idle is unavailable
+          fadeToAction(zombie, zombie.moveType, 0.7);
+        }
+        
+        zombie.state = 'idle';
+        zombie.previousState = 'idle';
+        
+        // Remove any existing timers
+        if (zombie.idleTimeout) {
+          clearTimeout(zombie.idleTimeout);
+          zombie.idleTimeout = null;
+        }
+      }
+      
+      // If zombie is resting, it should stay in idle and not move
+      if (zombie.isResting) {
+        // Make sure zombie stays in idle animation
+        if (zombie.state !== 'idle') {
+          if (zombie.actions.idle) {
+            fadeToAction(zombie, 'idle', 0.5);
+          } else {
+            fadeToAction(zombie, zombie.moveType, 0.5);
+          }
+          zombie.state = 'idle';
+        }
+        return; // Skip movement and attack logic
+      }
+      
+      // Calculate modified target position with horizontal offset
+      const targetPosition = new THREE.Vector3(
+        playerPos.x + zombie.horizontalOffset, // Добавляем смещение по горизонтали
+        0,
+        playerPos.z
+      );
+      
+      // Calculate direction to modified target
+      const direction = new THREE.Vector3(
+        targetPosition.x - zombiePos.x,
+        0, // Keep movement on ground
+        targetPosition.z - zombiePos.z
+      );
+      
+      // Calculate distance to target
+      const distance = direction.length();
+      direction.normalize(); // Normalize after calculating length
+      
+      // If in attack range, attack player
+      if (distance <= attackDistance) {
+        if (zombie.state !== 'attack') {
+          fadeToAction(zombie, 'attack', 0.2);
+          zombie.state = 'attack';
+          zombie.previousState = 'attack';
+          zombie.damageDealt = false;
+        }
+        
+        // Damage logic during attack
+        if (zombie.state === 'attack') {
+          const now = performance.now();
+          const attackAction = zombie.actions.attack;
+          
+          if (attackAction && attackAction.isRunning()) {
+            const clipDuration = attackAction._clip.duration;
+            const currentTime = attackAction.time;
+            
+            // Animation progress (0-1)
+            const progress = (currentTime % clipDuration) / clipDuration;
+            
+            // Deal damage at specific point in animation
+            if (progress >= ATTACK_DAMAGE_POINT && !zombie.damageDealt) {
+              // Random damage
+              const actualDamage = zombieDamage + Math.floor(Math.random() * (zombieDamageVariation * 2 + 1)) - zombieDamageVariation;
+              
+              // Apply damage to player
+              damagePlayer(actualDamage);
+              
+              // Mark damage as dealt
+              zombie.damageDealt = true;
+              
+              // Increment attack counter
+              zombie.attackCount++;
+              zombie.lastAttackTime = now;
+            }
+            
+            // Reset flag at start of animation for next cycle
+            if (progress < 0.1 && zombie.damageDealt) {
+              zombie.damageDealt = false;
+            }
+          }
+        }
+        
+        // Make zombie face player
+        zombie.mesh.lookAt(playerPos.x, zombiePos.y, playerPos.z);
+      } 
+      // Otherwise move toward target
+      else {
+        if (zombie.state !== zombie.moveType) {
+          fadeToAction(zombie, zombie.moveType, 0.2);
+          zombie.state = zombie.moveType;
+          zombie.previousState = zombie.moveType;
+        }
+        
+        // Save current zombie direction if it doesn't exist yet
+        if (!zombie.currentDirection) {
+          zombie.currentDirection = direction.clone();
+        } else {
+          // Smoothly interpolate between zombie's current direction and target direction
+          zombie.currentDirection.lerp(direction, delta * 3.0); // Smoother rotation
+          zombie.currentDirection.normalize();
+        }
+        
+        // Move zombie toward target
+        zombie.mesh.position.addScaledVector(zombie.currentDirection, zombie.moveSpeed * delta);
+        
+        // Smoothly rotate zombie in movement direction
+        const targetQuaternion = new THREE.Quaternion().setFromUnitVectors(
+          new THREE.Vector3(0, 0, 1), // Base forward direction
+          zombie.currentDirection
+        );
+        
+        // Initialize current rotation if needed
+        if (!zombie.currentRotation) {
+          zombie.currentRotation = new THREE.Quaternion().copy(zombie.mesh.quaternion);
+        }
+        
+        // Smoothly interpolate rotation
+        zombie.currentRotation.slerp(targetQuaternion, delta * 3.0);
+        zombie.mesh.quaternion.copy(zombie.currentRotation);
+      }
+    }
+
+    // 2. SPAWN WAVE FUNCTIONS FOR DIFFERENT PATTERNS
+
+    // Function to spawn a simple wave directly in front of player
+    function spawnZombieWave(count = 5, maxRadius = 15, minDistance = 5) {
+      spawnZombiesInFrontOfPlayer(count, maxRadius, minDistance);
+    }
+
+    // Function to spawn zombies in a circle around the player
+    function spawnZombieCircle(count = 8, radius = 10) {
+      // Ensure zombie templates are loaded
+      if (!window.zombieTemplates || 
+          (!window.zombieTemplates.male && !window.zombieTemplates.female)) {
+        console.error("Zombie templates not loaded");
+        return;
+      }
+      
+      // Get player position
+      const playerPos = cameraYaw.position.clone();
+      
+      // Function to spawn a single zombie with delay
+      function spawnNextZombie(index) {
+        if (index >= count) return; // Stop when all zombies are spawned
+        
+        // Calculate position in a full circle around player
+        const angle = (2 * Math.PI / count) * index;
+        
+        // Calculate position coordinates
+        const x = playerPos.x + Math.cos(angle) * radius;
+        const z = playerPos.z + Math.sin(angle) * radius;
+        
+        // Create zombie at calculated position
+        createDirectZombie(x, z);
+        
+        // Schedule next zombie spawn
+        setTimeout(() => {
+          spawnNextZombie(index + 1);
+        }, 300); // 300ms delay between spawns
+      }
+      
+      // Start spawning process
+      spawnNextZombie(0);
+    }
+
+    // Function to spawn zombies from random positions within range
+    function spawnRandomZombies(count = 5, minRadius = 8, maxRadius = 15) {
+      // Ensure zombie templates are loaded
+      if (!window.zombieTemplates || 
+          (!window.zombieTemplates.male && !window.zombieTemplates.female)) {
+        console.error("Zombie templates not loaded");
+        return;
+      }
+      
+      // Get player position
+      const playerPos = cameraYaw.position.clone();
+      
+      // Function to spawn a single zombie with delay
+      function spawnNextZombie(index) {
+        if (index >= count) return; // Stop when all zombies are spawned
+        
+        // Generate random angle and distance
+        const angle = Math.random() * Math.PI * 2; // Full 360° circle
+        const distance = minRadius + Math.random() * (maxRadius - minRadius);
+        
+        // Calculate position coordinates
+        const x = playerPos.x + Math.cos(angle) * distance;
+        const z = playerPos.z + Math.sin(angle) * distance;
+        
+        // Create zombie at calculated position
+        createDirectZombie(x, z);
+        
+        // Schedule next zombie spawn
+        setTimeout(() => {
+          spawnNextZombie(index + 1);
+        }, 300); // 300ms delay between spawns
+      }
+      
+      // Start spawning process
+      spawnNextZombie(0);
+    }
+
+    // Function to clear all zombies
+    function clearAllZombies() {
+      // Iterate backwards to safely remove items while iterating
+      for (let i = zombies.length - 1; i >= 0; i--) {
+        const zombie = zombies[i];
+        if (zombie && zombie.mesh) {
+          // Remove from scene
+          scene.remove(zombie.mesh);
+          if (zombie.helper) scene.remove(zombie.helper);
+          
+          // Remove health bar
+          if (zombie.healthBar && zombie.healthBar.parentNode) {
+            zombie.healthBar.parentNode.removeChild(zombie.healthBar);
+          }
+          
+          // Clean up materials and geometries
+          zombie.mesh.traverse(o => {
+            if (o.material && o.material.dispose) o.material.dispose();
+            if (o.geometry && o.geometry.dispose) o.geometry.dispose();
+          });
+        }
+        
+        // Remove from zombies array
+        zombies.splice(i, 1);
+      }
+      
+      console.log("All zombies cleared");
+    }
+
+    // Make functions available globally
+    window.spawnZombieWave = spawnZombieWave;
+    window.spawnZombieCircle = spawnZombieCircle;
+    window.spawnRandomZombies = spawnRandomZombies;
+    window.clearAllZombies = clearAllZombies;
+
+    // Simple usage examples
+    console.log("==== Direct Zombie Spawning System ====");
+    console.log("Available spawn functions:");
+    console.log("  window.spawnZombieWave(count, maxRadius, minDistance)");
+    console.log("  window.spawnZombieCircle(count, radius)");
+    console.log("  window.spawnRandomZombies(count, minRadius, maxRadius)");
+    console.log("  window.clearAllZombies()");
+    console.log("Example: spawnZombieWave(5) - Spawns 5 zombies in front");
+    console.log("========================================");
+        
+
 
     function createZombiesDirectly() {
       // Вместо count = 1, используем желаемое количество зомби
@@ -5523,6 +6286,8 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
         
         // Выбор случайного типа зомби
         const zombieType = Math.random() < 0.5 ? window.glbBase64_Zombie_Male : window.glbBase64_Zombie_Female;
+        // Выбор типа движения на основе настраиваемого соотношения
+        const moveType = getZombieMovementType();
         
         // Загружаем модель зомби и создаем ее
         loader.load(window.__getAsset(zombieType), gltf => {
@@ -5531,6 +6296,7 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
           const mixer = new THREE.AnimationMixer(mesh);
           
           // Найти клипы по имени
+          const run = clips.find(c => c.name.toLowerCase().includes('run'));
           const walk = clips.find(c => c.name.toLowerCase().includes('walk'));
           const attack = clips.find(c => c.name.toLowerCase().includes('attack'));
           const death = clips.find(c => c.name.toLowerCase().includes('death'));
@@ -5538,11 +6304,17 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
           const idle = clips.find(c => c.name.toLowerCase().includes('idle'));
           
           // Создать действия
-          const wa = mixer.clipAction(walk);
+          const ra = run ? mixer.clipAction(run) : null;
+          const wa = walk ? mixer.clipAction(walk) : null;
           const aa = mixer.clipAction(attack);
           const da = mixer.clipAction(death);
           const hi = mixer.clipAction(hit);
           const ia = idle ? mixer.clipAction(idle) : null; 
+          
+          // Настраиваем анимацию бега с увеличенной скоростью
+          if (ra) {
+            ra.setEffectiveTimeScale(moveType === 'run' ? RUN_ANIMATION_SPEED_MULTIPLIER * zombieSpeedFactor : zombieSpeedFactor);
+          }
           
           hi.setLoop(THREE.LoopOnce);
           hi.clampWhenFinished = true;
@@ -5564,9 +6336,12 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
             }
           });
           
-          // Устанавливаем начальную позу для статической сцены
-          wa.play();
-          wa.time = animationOffsets[zombiesCreated % animationOffsets.length];
+          // Играем текущую анимацию в зависимости от типа движения
+          const currentAnimation = moveType === 'run' ? ra : wa;
+          if (currentAnimation) {
+            currentAnimation.play();
+            currentAnimation.time = animationOffsets[zombiesCreated % animationOffsets.length];
+          }
           
           // Обновляем миксер один раз, чтобы применить начальную позу
           mixer.update(0.01);
@@ -5612,26 +6387,29 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
           // Используем систему сида вместо Math.random()
           const individualThreshold = getNextThreshold();
           
-          // Сохранить зомби в массив
+          // Добавляем зомби в массив со всеми необходимыми свойствами
           zombies.push({
             mesh,
             mixer,
             box,
             helper,
-            hp: 100,
+            hp: 200,
             healthBar: hb,
             healthFill: hf,
             anchorPoint: anchor,
-            state: 'walk',
-            previousState: 'walk',
+            state: moveType, // Состояние соответствует типу движения
+            previousState: moveType,
             hitTime: 0,
             isHit: false,
             zombieType: zombieGender,
-            actions: { walk: wa, attack: aa, death: da, hit: hi, idle: ia },
-            activeAction: wa,
+            moveType: moveType, // Добавляем тип движения как отдельное свойство
+            moveSpeed: moveType === 'run' ? ZOMBIE_RUN_SPEED : ZOMBIE_WALK_SPEED, // Скорость движения
+            // Добавляем и walk и run в actions
+            actions: { run: ra, walk: wa, attack: aa, death: da, hit: hi, idle: ia },
+            activeAction: currentAnimation,
             waypoints: waypoints,
             currentWaypoint: 0,
-            waypointThreshold: individualThreshold // Добавляем индивидуальный порог
+            waypointThreshold: individualThreshold
           });
           
           // Рендерим сцену после создания зомби
@@ -5713,6 +6491,7 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
       if (e.code === 'KeyF') {
         // Переключение метода загрузки зомби по нажатию клавиши F
         switchToDirectZombieLoading();
+        spawnZombiesInLine(3, 2, 1, 'walk');
       }
     });
 
@@ -5806,8 +6585,8 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
       rotX -= moveY * 0.002 * touchSensitivity;
       
       // Ограничиваем углы поворота
-      rotX = Math.max(-Math.PI / 1, Math.min(Math.PI / 1, rotX));
-      rotY = Math.max(-Math.PI / 1, Math.min(Math.PI / 1, rotY));
+      rotX = Math.max(-Math.PI / 9, Math.min(Math.PI / 9, rotX));
+      rotY = Math.max(-Math.PI / 7, Math.min(Math.PI / 7, rotY));
       
       // Применяем вращение к камере, если не активна тряска
       if (!cameraShake.active) {
@@ -6181,7 +6960,7 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
           }
           
           setTimeout(() => { // fade out and remove
-            const fadeDur = 2, start = performance.now();
+            const fadeDur = 0.5, start = performance.now();
             function fade(t) { 
               const elapsed = (t - start) / 1000, tt = Math.min(elapsed / fadeDur, 1);
               closest.mesh.traverse(o => { 
@@ -6477,8 +7256,8 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
       
       // Определяем точки спавна с двух сторон
       const spawnPoints = [
-        { x: 2.7, z: -11.5 },  // Существующая точка спавна (справа)
-        { x: -3, z: -11.5 }  // Новая точка спавна (слева)
+        { x: 3, z: -11 },  // Существующая точка спавна (справа)
+        { x: -3, z: -11 }  // Новая точка спавна (слева)
       ];
       
       // Распределяем зомби между точками спавна
@@ -6492,8 +7271,8 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
         
         // Добавляем случайное смещение для разнообразия
         const randomOffset = {
-          x: Math.random() * 0.5 - 0.001,
-          z: Math.random() * 0.5 - 0.001
+          x: Math.random() * 0 - 0.001,
+          z: Math.random() * 0 - 0.001
         };
         
         positions.push({
@@ -6529,9 +7308,9 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
 
     // Добавьте эти переменные в начало скрипта, где другие константы
     const WAYPOINT_SYSTEM_ENABLED = true;
-    const WAYPOINT_THRESHOLD = 2; // Расстояние, на котором зомби считает, что достиг путевой точки
-    const WAYPOINT_LOOKAHEAD = 4; // Расстояние, на котором зомби начинает смотреть на следующую точку
-    const ROTATION_SMOOTHING = 3;
+    const WAYPOINT_THRESHOLD = 1; // Расстояние, на котором зомби считает, что достиг путевой точки
+    const WAYPOINT_LOOKAHEAD = 1; // Расстояние, на котором зомби начинает смотреть на следующую точку
+    const ROTATION_SMOOTHING = 2;
 
     // Функция для обновления состояния звуков
     function updateSounds() {
@@ -6655,6 +7434,7 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
       z.activeAction = hit;
     }
 
+// 2. Изменение для функции spawnZombieAt - ищем анимацию run вместо walk
     function spawnZombieAt(x, z) {
       // Проверяем, загружены ли шаблоны зомби
       if (!window.zombieTemplates || 
@@ -6667,23 +7447,34 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
       const zombieType = Math.random() < 0.5 ? "male" : "female";
       const template = window.zombieTemplates[zombieType];
       
+      // Выбор типа движения с настраиваемым соотношением
+      const moveType = getZombieMovementType();
+      
       // Клонируем модель из шаблона
       const mesh = template.scene.clone();
       const clips = template.animations;
       const mixer = new THREE.AnimationMixer(mesh);
       
-      // Настройка анимаций (такая же, как в createZombiesDirectly)
+      // Находим все нужные анимации
+      const run = clips.find(c => c.name.toLowerCase().includes('run'));
       const walk = clips.find(c => c.name.toLowerCase().includes('walk'));
       const attack = clips.find(c => c.name.toLowerCase().includes('attack'));
       const death = clips.find(c => c.name.toLowerCase().includes('death'));
       const hit = clips.find(c => c.name.toLowerCase().includes('hit'));
       const idle = clips.find(c => c.name.toLowerCase().includes('idle'));
       
-      const wa = mixer.clipAction(walk);
+      // Создаем действия для всех анимаций
+      const ra = run ? mixer.clipAction(run) : null;
+      const wa = walk ? mixer.clipAction(walk) : null;
       const aa = mixer.clipAction(attack);
       const da = mixer.clipAction(death);
       const hi = mixer.clipAction(hit);
       const ia = idle ? mixer.clipAction(idle) : null; 
+      
+      // Настраиваем скорость анимации для бега
+      if (ra) {
+        ra.setEffectiveTimeScale(moveType === 'run' ? RUN_ANIMATION_SPEED_MULTIPLIER * zombieSpeedFactor : zombieSpeedFactor);
+      }
       
       hi.setLoop(THREE.LoopOnce);
       hi.clampWhenFinished = true;
@@ -6705,9 +7496,12 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
         }
       });
       
-      // Запуск анимации ходьбы
-      wa.play();
-      wa.time = Math.random() * 2; // Случайное смещение
+      // Запускаем анимацию в зависимости от типа движения
+      const currentAnimation = moveType === 'run' ? ra : wa;
+      if (currentAnimation) {
+        currentAnimation.play();
+        currentAnimation.time = Math.random() * 2; // Случайное смещение
+      }
       
       mixer.update(0.01);
       mixer.timeScale = zombieSpeedFactor;
@@ -6743,26 +7537,28 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
       // Используем систему сида для threshold вместо Math.random()
       const individualThreshold = getNextThreshold();
       
-      // Добавляем зомби в массив
+      // Добавляем зомби в массив с настройками в зависимости от типа движения
       zombies.push({
         mesh,
         mixer,
         box,
         helper,
-        hp: 100,
+        hp: 150,
         healthBar: hb,
         healthFill: hf,
         anchorPoint: anchor,
-        state: 'walk',
-        previousState: 'walk',
+        state: moveType,
+        previousState: moveType,
         hitTime: 0,
         isHit: false,
         zombieType: zombieType,
-        actions: { walk: wa, attack: aa, death: da, hit: hi, idle: ia },
-        activeAction: wa,
+        moveType: moveType, // Добавляем тип движения как отдельное свойство
+        moveSpeed: moveType === 'run' ? ZOMBIE_RUN_SPEED : ZOMBIE_WALK_SPEED, // Скорость движения
+        actions: { run: ra, walk: wa, attack: aa, death: da, hit: hi, idle: ia },
+        activeAction: currentAnimation,
         waypoints: waypoints,
         currentWaypoint: 0,
-        waypointThreshold: individualThreshold // Добавляем индивидуальный порог
+        waypointThreshold: individualThreshold
       });
       
       return zombies[zombies.length - 1];
@@ -6776,8 +7572,298 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
     console.log("==================================================");
 
 
+    function spawnZombiesInLine(count = 1, spreadVariance = 2, distanceIncrement = 2, forceMovementType = 'walk') {
+  // Get the player's position and orientation
+  const playerPos = cameraYaw.position;
+  const playerRotation = cameraYaw.rotation.y;
+  
+  // Base distance for the first zombie
+  const baseDistance = 5;
+  
+  // Validate and handle the movement type parameter
+  let forcedMoveType = null;
+  if (forceMovementType === 'walk' || forceMovementType === 'run') {
+    forcedMoveType = forceMovementType;
+    console.log(`Forcing all zombies to ${forcedMoveType} mode`);
+  }
+  
+  console.log(`Spawning ${count} zombies in a line extending away from player...`);
+  
+  // Calculate positions for zombies extending away from player with random variance
+  const positions = [];
+  
+  // Предварительно рассчитываем равномерное распределение по горизонтали
+  const horizontalStep = 2.0 / (count + 1); // Шаг между зомби по горизонтали
+  
+  for (let i = 0; i < count; i++) {
+    // Calculate distance from player (increasing with each zombie)
+    const distance = baseDistance + (i * distanceIncrement);
+    
+    // Равномерное распределение по ширине от -1 до 1
+    const horizontalOffset = -1 + horizontalStep * (i + 1);
+    
+    // Добавляем небольшую случайность, чтобы избежать идеально ровного расположения
+    const randomVariance = (Math.random() * 0.4 - 0.2) * spreadVariance;
+    const finalHorizontalOffset = horizontalOffset + randomVariance;
+    
+    // Calculate position extending away from player with the horizontal offset
+    // We need to rotate both the distance and variance components by player rotation
+    const rotatedDistanceX = -Math.sin(playerRotation) * distance;
+    const rotatedDistanceZ = -Math.cos(playerRotation) * distance;
+    
+    // Calculate the perpendicular direction for horizontal variance
+    const perpendicularX = Math.cos(playerRotation) * finalHorizontalOffset * spreadVariance;
+    const perpendicularZ = -Math.sin(playerRotation) * finalHorizontalOffset * spreadVariance;
+    
+    // Combine distance component and horizontal variance
+    const posX = playerPos.x + rotatedDistanceX + perpendicularX;
+    const posZ = playerPos.z + rotatedDistanceZ + perpendicularZ;
+    
+    positions.push({ 
+      x: posX, 
+      z: posZ, 
+      distance: distance,
+      horizontalOffset: finalHorizontalOffset // Сохраняем смещение для использования в путевых точках
+    });
+  }
+  
+    // Counter for tracking how many zombies have been spawned
+    let zombiesSpawned = 0;
+  
+    // Function to spawn a single zombie at a position
+    function spawnZombieAtPosition(position, index) {
+      const dracoLoader = new THREE.DRACOLoader();
+      dracoLoader.setDecoderPath(DRACO_DECODER_PATH);
+      dracoLoader.setDecoderConfig({ type: 'js' });
+      
+      const loader = new THREE.GLTFLoader();
+      loader.setDRACOLoader(dracoLoader);
+      
+      // Random zombie type
+      const zombieType = Math.random() < 0.5 ? window.glbBase64_Zombie_Male : window.glbBase64_Zombie_Female;
+      
+      // Determine move type - use forced type if specified, otherwise use random
+      const moveType = forcedMoveType || getZombieMovementType();
+      
+      console.log(`Loading zombie ${index+1}/${count} (${zombieType}, ${moveType}) at distance ${position.distance.toFixed(1)}m with horizontal offset ${position.horizontalOffset.toFixed(2)}...`);
+      
+      loader.load(window.__getAsset(zombieType), function(gltf) {
+        const mesh = gltf.scene;
+        const clips = gltf.animations;
+        const mixer = new THREE.AnimationMixer(mesh);
+        
+        // Find all animation clips
+        const run = clips.find(c => c.name.toLowerCase().includes('run'));
+        const walk = clips.find(c => c.name.toLowerCase().includes('walk'));
+        const attack = clips.find(c => c.name.toLowerCase().includes('attack'));
+        const death = clips.find(c => c.name.toLowerCase().includes('death'));
+        const hit = clips.find(c => c.name.toLowerCase().includes('hit'));
+        const idle = clips.find(c => c.name.toLowerCase().includes('idle'));
+        
+        // Create animation actions
+        const ra = run ? mixer.clipAction(run) : null;
+        const wa = walk ? mixer.clipAction(walk) : null;
+        const aa = mixer.clipAction(attack);
+        const da = mixer.clipAction(death);
+        const hi = mixer.clipAction(hit);
+        const ia = idle ? mixer.clipAction(idle) : null;
+        
+        // Configure animation speeds
+        if (ra) {
+          ra.setEffectiveTimeScale(moveType === 'run' ? RUN_ANIMATION_SPEED_MULTIPLIER * zombieSpeedFactor : zombieSpeedFactor);
+        }
+        
+        hi.setLoop(THREE.LoopOnce);
+        hi.clampWhenFinished = true;
+        hi.setEffectiveTimeScale(HIT_SPEED_MULTIPLIER * zombieSpeedFactor);
+        
+        da.setLoop(THREE.LoopOnce);
+        da.clampWhenFinished = true;
+        
+        // Position settings
+        mesh.scale.set(1, 1, 1);
+        mesh.position.set(position.x, 0, position.z);
+        scene.add(mesh);
+        
+        // Configure materials
+        mesh.traverse(o => {
+          o.frustumCulled = false;
+          if (o.isMesh && o.material) {
+            o.material.side = THREE.DoubleSide;
+          }
+        });
+        
+        // Set a random animation offset for variation
+        const animationToPlay = moveType === 'run' ? ra : wa;
+        if (animationToPlay) {
+          animationToPlay.play();
+          animationToPlay.time = Math.random() * 2; // Random start time for variation
+        } else {
+          // Fallback to attack if movement animations aren't available
+          aa.play();
+        }
+        
+        mixer.update(0.01);
+        mixer.timeScale = zombieSpeedFactor;
+        
+        // Create bounding box
+        const box = new THREE.Box3().setFromObject(mesh);
+        const helper = new THREE.Box3Helper(box, 0x00ff00);
+        helper.material.transparent = true;
+        helper.material.opacity = 0.5;
+        helper.visible = false;
+        scene.add(helper);
+        
+        // Create health bar
+        const hb = document.createElement('div');
+        hb.className = 'health-bar';
+        const hf = document.createElement('div');
+        hf.className = 'health-fill';
+        hb.appendChild(hf);
+        healthBarsContainer.appendChild(hb);
+        
+        // Create anchor point (head bone)
+        const head = findHeadBone(mesh);
+        const anchor = head || new THREE.Object3D();
+        if (!head) {
+          const bb = new THREE.Box3().setFromObject(mesh);
+          anchor.position.set(0, bb.max.y + 0.2, 0);
+          mesh.add(anchor);
+        }
+        
+        // Face the player
+        mesh.lookAt(playerPos.x, mesh.position.y, playerPos.z);
+        
+        // Zombie gender for tracking
+        const zombieGender = zombieType.includes('Male') ? 'male' : 'female';
+        
+        // Создаем улучшенные путевые точки с сохранением горизонтального смещения
+        const waypoints = [
+          { x: position.x, z: position.z }, // Исходная позиция
+          // Промежуточная точка
+          { x: playerPos.x + position.horizontalOffset * 2, z: position.z * 0.5 },
+          // Конечная точка - игрок с небольшим смещением по горизонтали
+          { x: playerPos.x + position.horizontalOffset, z: playerPos.z }
+        ];
+        
+        // Individual threshold using system
+        const individualThreshold = getNextThreshold();
+        
+        // The movement speed is determined by the move type
+        const moveSpeed = moveType === 'run' ? ZOMBIE_RUN_SPEED : ZOMBIE_WALK_SPEED;
+        
+        // Create the zombie object with all properties
+        const zombie = {
+          mesh,
+          mixer,
+          box,
+          helper,
+          hp: 150,
+          healthBar: hb,
+          healthFill: hf,
+          anchorPoint: anchor,
+          state: moveType,
+          previousState: moveType,
+          hitTime: 0,
+          isHit: false,
+          zombieType: zombieGender,
+          moveType: moveType,
+          moveSpeed: moveSpeed,
+          actions: { run: ra, walk: wa, attack: aa, death: da, hit: hi, idle: ia },
+          activeAction: animationToPlay || aa,
+          waypoints: waypoints,
+          currentWaypoint: 0,
+          waypointThreshold: individualThreshold,
+          attackCount: 0,
+          damageDealt: false,
+          // Сохраняем горизонтальное смещение для обновления последней точки пути
+          horizontalOffset: position.horizontalOffset
+        };
+        
+        // Add to zombies array
+        zombies.push(zombie);
+        
+        // Show health bar
+        hb.style.display = 'block';
+        
+        // Update health bar position
+        const sp = toScreenPosition(zombie.anchorPoint, camera);
+        const camPos = camera.getWorldPosition(new THREE.Vector3());
+        const ap = new THREE.Vector3();
+        zombie.anchorPoint.getWorldPosition(ap);
+        const dist = camPos.distanceTo(ap);
+        const scale = calculateScale(dist);
+        hb.style.left = (sp.x - 20) + 'px';
+        hb.style.top = (sp.y - 15) + 'px';
+        hb.style.transform = `scale(${scale})`;
+        
+        // Increment spawned count
+        zombiesSpawned++;
+        console.log(`Zombie ${zombiesSpawned}/${count} loaded successfully!`);
+        
+        // Force a render
+        renderer.render(scene, camera);
+        
+        // If all zombies spawned, log completion
+        if (zombiesSpawned === count) {
+          console.log(`All ${count} zombies successfully spawned!`);
+        }
+      }, 
+      // Progress callback
+      function(xhr) {
+        if (xhr.lengthComputable) {
+          const percentComplete = Math.round(xhr.loaded / xhr.total * 100);
+          console.log(`Zombie ${index+1}: ${percentComplete}% loaded`);
+        }
+      },
+      // Error callback
+      function(error) {
+        console.error(`Error loading zombie ${index+1}:`, error);
+        zombiesSpawned++;
+        
+        if (zombiesSpawned === count) {
+          console.log(`Spawning complete with errors. ${count - zombiesSpawned} zombies failed to load.`);
+        }
+      });
+    }
+    
+    // Spawn all zombies
+    positions.forEach((position, index) => {
+      // Add slight delay between spawns to avoid overwhelming the loader
+      setTimeout(() => {
+        spawnZombieAtPosition(position, index);
+      }, index * 100); // 100ms between each spawn
+    });
+    
+    return `Spawning ${count} zombies in a line extending away from you... (check console for progress)`;
+  }
+
+    // Create a convenience function specifically for walking zombies
+    function spawnWalkingZombiesInLine(count = 1, spreadVariance = 2, distanceIncrement = 2) {
+      return spawnZombiesInLine(count, spreadVariance, distanceIncrement, 'walk');
+    }
+
+    // Create a convenience function specifically for running zombies
+    function spawnRunningZombiesInLine(count = 1, spreadVariance = 2, distanceIncrement = 2) {
+      return spawnZombiesInLine(count, spreadVariance, distanceIncrement, 'run');
+    }
+
+    // Make all functions globally available
+    window.spawnZombiesInLine = spawnZombiesInLine;
+    window.spawnWalkingZombiesInLine = spawnWalkingZombiesInLine;
+    window.spawnRunningZombiesInLine = spawnRunningZombiesInLine;
+
+    // Backward compatibility - keep the old function name as an alias
+    window.spawnZombieInFront = function() {
+      return spawnZombiesInLine(1);
+    };
+
+    // Make the function globally available
+    window.spawnZombieInFront = spawnZombieInFront;
+
+
     function animate() {
-      // Продолжаем анимационный цикл только если игра запущена
+      // Continue animation loop only if game is running
       if (isGameRunning) {
         requestAnimationFrame(animate);
       }
@@ -6785,15 +7871,15 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
       const delta = clock.getDelta(), now = performance.now(); 
       if (handsMixer) handsMixer.update(delta); 
       updateCameraShake(delta); 
-      updateSounds(); 
+      updateSounds();   
       
-      // Проверяем состояние фоновой музыки
+      // Check background music state
       checkBGM();
       
       zombies.forEach(z => { 
         if (!z.mesh) return; 
         
-        // Обновляем миксеры анимаций с правильной скоростью
+        // Update animation mixers with correct speed
         z.mixer.update(delta); 
         
         if (z.state === 'dead') return; 
@@ -6805,28 +7891,28 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
           } 
         }); 
         
-        // Проверка анимации урона и возврат в нормальное состояние
+        // Check hit animation and return to normal state
         if (z.isHit && now - z.hitTime > HIT_ANIMATION_DURATION * 1000) { 
           z.isHit = false;
           
-          // Если зомби достиг максимального количества атак, возвращаем его в idle
+          // If zombie reached maximum number of attacks, return to idle
           if (z.attackCount >= ZOMBIE_MAX_ATTACKS) {
             if (z.actions.idle) {
-              fadeToAction(z, 'idle', 0.5); // Более плавный переход в idle (0.5 секунды)
+              fadeToAction(z, 'idle', 0.5); // Smoother transition to idle (0.5 seconds)
               z.state = 'idle';
-              z.isResting = true; // Помечаем зомби как отдыхающий навсегда
+              z.isResting = true; // Mark zombie as resting forever
             } else {
-              // Запасной вариант, если анимации idle нет
-              fadeToAction(z, 'walk', 0.5);
-              z.state = 'walk';
+              // Fallback if idle animation is not available - use movement type
+              fadeToAction(z, z.moveType, 0.5);
+              z.state = z.moveType;
               z.isResting = true;
             }
           } else {
-            // Возвращаем зомби в его предыдущее состояние
+            // Return zombie to previous state
             const prev = z.actions[z.previousState];
             z.state = z.previousState;
             
-            // Делаем более плавный выход из анимации удара, если было накоплено много ударов
+            // Make smoother exit from hit animation if many hits accumulated
             let blendOutDuration = HIT_BLEND_OUT_DURATION;
             if (z.hitCount > 1) {
               blendOutDuration = HIT_BLEND_OUT_DURATION * 1.3;
@@ -6839,237 +7925,263 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
             z.activeAction = prev;
           }
           
-          // Сбрасываем счетчик ударов
+          // Reset hit counter
           z.hitCount = 0;
         } 
         
         if (!z.isHit) { 
-          const playerPos = cameraYaw.position, zp = z.mesh.position; 
-          const flatP = new THREE.Vector3(playerPos.x, 0, playerPos.z);
-          const flatZ = new THREE.Vector3(zp.x, 0, zp.z); 
-          const d = flatP.distanceTo(flatZ); 
-          
-          // Инициализация системы путевых точек при первом обновлении
-          if (!z.waypoints) {
-            z.waypoints = createWaypointsForZombie(zp);
-            z.currentWaypoint = 0;
-          }
-          
-          // Обновляем позицию игрока в последней путевой точке
-          if (z.waypoints.length > 1) {
-            z.waypoints[z.waypoints.length - 1] = { x: playerPos.x, z: playerPos.z };
-          }
-          
-          // Инициализируем счетчики, если их нет
-          if (z.attackCount === undefined) z.attackCount = 0;
-          if (z.damageDealt === undefined) z.damageDealt = false;
-          if (z.isResting === undefined) z.isResting = false;
-          if (!z.lastAttackTime) z.lastAttackTime = 0;
-          
-          // ПЕРВАЯ ПРОВЕРКА: должен ли зомби перейти в состояние idle
-          if (z.attackCount >= ZOMBIE_MAX_ATTACKS && !z.isResting) {
-            // Зомби достиг максимума атак - переводим его в idle навсегда
-            z.isResting = true; // Зомби навсегда остается в состоянии отдыха
-            
-            // Используем плавный переход в анимацию idle
-            if (z.actions.idle) {
-              fadeToAction(z, 'idle', 0.7); // Очень плавный переход (0.7 секунды)
-            } else {
-              // Запасной вариант, если idle недоступен
-              fadeToAction(z, 'walk', 0.7);
-            }
-            
-            z.state = 'idle';
-            z.previousState = 'idle';
-            
-            // Удаляем любые существующие таймеры
-            if (z.idleTimeout) {
-              clearTimeout(z.idleTimeout);
-              z.idleTimeout = null;
-            }
-          }
-          
-          // Обработка в зависимости от состояния отдыха
-          if (z.isResting) {
-            // Если зомби отдыхает, он не должен двигаться или атаковать
-            // И должен оставаться в анимации idle
-            
-            // Убедимся, что зомби остается в анимации idle
-            if (z.state !== 'idle') {
-              if (z.actions.idle) {
-                fadeToAction(z, 'idle', 0.5);
-              } else {
-                fadeToAction(z, 'walk', 0.5);
-              }
-              z.state = 'idle';
-            }
-            
-            // НЕ ДВИГАЕМ зомби и НЕ РАЗРЕШАЕМ ему снова атаковать
+          // *** NEW CODE: Check if zombie uses direct movement ***
+          if (z.useDirectMovement) {
+            updateDirectZombieMovement(z, delta);
+            // Skip waypoint code for these zombies
+            // But still update health bar position
           } else {
-            // Если зомби не в зоне атаки, он следует по пути путевых точек
-            if (d > attackDistance) {
-              // Если зомби не в состоянии ходьбы, переключаем его
-              if (z.state !== 'walk') { 
-                fadeToAction(z, 'walk', 0.2); 
-                z.state = 'walk'; 
-                z.previousState = 'walk'; 
+            // *** ORIGINAL WAYPOINT CODE STARTS HERE ***
+            const playerPos = cameraYaw.position, zp = z.mesh.position; 
+            const flatP = new THREE.Vector3(playerPos.x, 0, playerPos.z);
+            const flatZ = new THREE.Vector3(zp.x, 0, zp.z); 
+            const d = flatP.distanceTo(flatZ); 
+            
+            // Initialize waypoint system on first update
+            if (!z.waypoints) {
+              z.waypoints = createWaypointsForZombie(zp);
+              z.currentWaypoint = 0;
+            }
+            
+            // Update player position in last waypoint with horizontal offset
+            if (z.waypoints.length > 1) {
+              // Если у зомби есть сохраненное горизонтальное смещение
+              if (z.horizontalOffset !== undefined) {
+                const lastIndex = z.waypoints.length - 1;
+                z.waypoints[lastIndex] = {
+                  x: playerPos.x + z.horizontalOffset,
+                  z: playerPos.z
+                };
+              } else {
+                // Если нет смещения, просто обновляем последнюю точку
+                // И назначаем случайное смещение для будущего использования
+                z.horizontalOffset = Math.random() * 2 - 1;
+                const lastIndex = z.waypoints.length - 1;
+                z.waypoints[lastIndex] = {
+                  x: playerPos.x + z.horizontalOffset,
+                  z: playerPos.z
+                };
+              }
+            }
+            
+            // Initialize counters if they don't exist
+            if (z.attackCount === undefined) z.attackCount = 0;
+            if (z.damageDealt === undefined) z.damageDealt = false;
+            if (z.isResting === undefined) z.isResting = false;
+            if (!z.lastAttackTime) z.lastAttackTime = 0;
+            if (!z.moveSpeed) z.moveSpeed = z.moveType === 'run' ? ZOMBIE_RUN_SPEED : ZOMBIE_WALK_SPEED;
+            
+            // FIRST CHECK: should zombie transition to idle
+            if (z.attackCount >= ZOMBIE_MAX_ATTACKS && !z.isResting) {
+              // Zombie reached max attacks - transition to idle forever
+              z.isResting = true; // Zombie remains in rest state
+              
+              // Use smooth transition to idle animation
+              if (z.actions.idle) {
+                fadeToAction(z, 'idle', 0.7); // Very smooth transition (0.7 seconds)
+              } else {
+                // Fallback if idle is unavailable - use movement type
+                fadeToAction(z, z.moveType, 0.7);
               }
               
-              // Проверяем, достиг ли зомби текущей путевой точки
-              const currentTarget = z.waypoints[z.currentWaypoint];
-              const distToWaypoint = Math.sqrt(
-                Math.pow(zp.x - currentTarget.x, 2) + 
-                Math.pow(zp.z - currentTarget.z, 2)
-              );
+              z.state = 'idle';
+              z.previousState = 'idle';
               
+              // Remove any existing timers
+              if (z.idleTimeout) {
+                clearTimeout(z.idleTimeout);
+                z.idleTimeout = null;
+              }
+            }
+            
+            // Process based on rest state
+            if (z.isResting) {
+              // If zombie is resting, it should not move or attack
+              // And should remain in idle animation
               
-              // Проверяем, есть ли следующая путевая точка
-              const hasNextWaypoint = z.currentWaypoint < z.waypoints.length - 1;
+              // Make sure zombie stays in idle animation
+              if (z.state !== 'idle') {
+                if (z.actions.idle) {
+                  fadeToAction(z, 'idle', 0.5);
+                } else {
+                  // Use zombie's movement type instead of fixed type
+                  fadeToAction(z, z.moveType, 0.5);
+                }
+                z.state = 'idle';
+              }
               
-              // Рассчитываем текущее и следующее направления
-              let currentDir = new THREE.Vector3(
-                currentTarget.x - zp.x,
-                0,
-                currentTarget.z - zp.z
-              ).normalize();
-              
-              let nextDir;
-              if (hasNextWaypoint && distToWaypoint < WAYPOINT_LOOKAHEAD) {
-                // Если мы приближаемся к текущей точке и есть следующая, 
-                // начинаем учитывать следующую точку
-                const nextTarget = z.waypoints[z.currentWaypoint + 1];
-                nextDir = new THREE.Vector3(
-                  nextTarget.x - currentTarget.x,
+              // DO NOT MOVE zombie and DO NOT ALLOW it to attack again
+            } else {
+              // If zombie is not in attack zone, it follows path via waypoints
+              if (d > attackDistance) {
+                // If zombie is not in its movement state (run or walk), switch it
+                if (z.state !== z.moveType) { 
+                  fadeToAction(z, z.moveType, 0.2); 
+                  z.state = z.moveType; 
+                  z.previousState = z.moveType; 
+                }
+                
+                // Check if zombie reached current waypoint
+                const currentTarget = z.waypoints[z.currentWaypoint];
+                const distToWaypoint = Math.sqrt(
+                  Math.pow(zp.x - currentTarget.x, 2) + 
+                  Math.pow(zp.z - currentTarget.z, 2)
+                );
+                
+                // Check if there's a next waypoint
+                const hasNextWaypoint = z.currentWaypoint < z.waypoints.length - 1;
+                
+                // Calculate current and next directions
+                let currentDir = new THREE.Vector3(
+                  currentTarget.x - zp.x,
                   0,
-                  nextTarget.z - currentTarget.z
+                  currentTarget.z - zp.z
                 ).normalize();
                 
-                // Вычисляем коэффициент интерполяции на основе близости к текущей точке
-                const blendFactor = 1.0 - Math.min(distToWaypoint / WAYPOINT_LOOKAHEAD, 1.0);
-                
-                // Плавно интерполируем между текущим и следующим направлениями
-                currentDir.lerp(nextDir, blendFactor);
-                currentDir.normalize();
-              }
-              
-              // Сохраняем текущее направление зомби, если его еще нет
-              if (!z.currentDirection) {
-                z.currentDirection = currentDir.clone();
-              } else {
-                // Плавно интерполируем между текущим направлением зомби и целевым направлением
-                z.currentDirection.lerp(currentDir, delta * ROTATION_SMOOTHING);
-                z.currentDirection.normalize();
-              }
-              
-              // Двигаем зомби в текущем сглаженном направлении
-              z.mesh.position.addScaledVector(z.currentDirection, ZOMBIE_MOVE_SPEED * delta);
-              
-              // Плавно поворачиваем зомби в направлении движения
-              const targetRotation = new THREE.Quaternion().setFromUnitVectors(
-                new THREE.Vector3(0, 0, 1), // Базовое направление вперед
-                z.currentDirection
-              );
-              
-              // Если у зомби нет текущего кватерниона, создаем его
-              if (!z.currentRotation) {
-                z.currentRotation = new THREE.Quaternion().copy(z.mesh.quaternion);
-              }
-              
-              // Плавно интерполируем между текущим поворотом и целевым
-              z.currentRotation.slerp(targetRotation, delta * ROTATION_SMOOTHING);
-              z.mesh.quaternion.copy(z.currentRotation);
-              
-              const threshold = z.waypointThreshold !== undefined ? z.waypointThreshold : WAYPOINT_THRESHOLD;
-              // Если достигли путевой точки, переходим к следующей
-              if (distToWaypoint < threshold) {
-                z.currentWaypoint = Math.min(z.currentWaypoint + 1, z.waypoints.length - 1);
-              }
-            } else { 
-              // Зомби в зоне атаки и не отдыхает - он должен атаковать
-              if (z.state !== 'attack') {
-                fadeToAction(z, 'attack', 0.2);
-                z.state = 'attack';
-                z.previousState = 'attack';
-                
-                // Сбрасываем флаг нанесения урона для новой атаки
-                z.damageDealt = false;
-              }
-              
-              // Логика нанесения урона при атаке
-              if (z.state === 'attack') {
-                const attackAction = z.actions.attack;
-                
-                if (attackAction && attackAction.isRunning()) {
-                  const clipDuration = attackAction._clip.duration;
-                  const currentTime = attackAction.time;
+                let nextDir;
+                if (hasNextWaypoint && distToWaypoint < WAYPOINT_LOOKAHEAD) {
+                  // If approaching current point and there's a next one,
+                  // start considering the next point
+                  const nextTarget = z.waypoints[z.currentWaypoint + 1];
+                  nextDir = new THREE.Vector3(
+                    nextTarget.x - currentTarget.x,
+                    0,
+                    nextTarget.z - currentTarget.z
+                  ).normalize();
                   
-                  // Прогресс анимации (0-1)
-                  const progress = (currentTime % clipDuration) / clipDuration;
+                  // Calculate interpolation factor based on proximity to current point
+                  const blendFactor = 1.0 - Math.min(distToWaypoint / WAYPOINT_LOOKAHEAD, 1.0);
                   
-                  // Наносим урон в определенной точке анимации
-                  if (progress >= ATTACK_DAMAGE_POINT && !z.damageDealt) {
-                    // Случайный урон
-                    const actualDamage = zombieDamage + Math.floor(Math.random() * (zombieDamageVariation * 2 + 1)) - zombieDamageVariation;
-                    
-                    // Наносим урон игроку
-                    damagePlayer(actualDamage);
-                    
-                    // Помечаем, что урон нанесен
-                    z.damageDealt = true;
-                    
-                    // Увеличиваем счетчик атак
-                    z.attackCount++;
-                    z.lastAttackTime = now;
-                  }
+                  // Smoothly interpolate between current and next directions
+                  currentDir.lerp(nextDir, blendFactor);
+                  currentDir.normalize();
+                }
+                
+                // Save current zombie direction if it doesn't exist yet
+                if (!z.currentDirection) {
+                  z.currentDirection = currentDir.clone();
+                } else {
+                  // Smoothly interpolate between zombie's current direction and target direction
+                  z.currentDirection.lerp(currentDir, delta * ROTATION_SMOOTHING);
+                  z.currentDirection.normalize();
+                }
+                
+                // Move zombie in current smoothed direction, using its movement speed
+                z.mesh.position.addScaledVector(z.currentDirection, z.moveSpeed * delta);
+                
+                // Smoothly rotate zombie in movement direction
+                const targetRotation = new THREE.Quaternion().setFromUnitVectors(
+                  new THREE.Vector3(0, 0, 1), // Base forward direction
+                  z.currentDirection
+                );
+                
+                // If zombie doesn't have current quaternion, create it
+                if (!z.currentRotation) {
+                  z.currentRotation = new THREE.Quaternion().copy(z.mesh.quaternion);
+                }
+                
+                // Smoothly interpolate between current rotation and target
+                z.currentRotation.slerp(targetRotation, delta * ROTATION_SMOOTHING);
+                z.mesh.quaternion.copy(z.currentRotation);
+                
+                const threshold = z.waypointThreshold !== undefined ? z.waypointThreshold : WAYPOINT_THRESHOLD;
+                // If waypoint reached, move to next
+                if (distToWaypoint < threshold) {
+                  z.currentWaypoint = Math.min(z.currentWaypoint + 1, z.waypoints.length - 1);
+                }
+              } else { 
+                // Zombie in attack zone and not resting - it should attack
+                if (z.state !== 'attack') {
+                  fadeToAction(z, 'attack', 0.2);
+                  z.state = 'attack';
+                  z.previousState = 'attack';
                   
-                  // Сбрасываем флаг в начале анимации для следующего цикла
-                  if (progress < 0.1 && z.damageDealt) {
-                    z.damageDealt = false;
+                  // Reset damage dealt flag for new attack
+                  z.damageDealt = false;
+                }
+                
+                // Damage logic during attack
+                if (z.state === 'attack') {
+                  const attackAction = z.actions.attack;
+                  
+                  if (attackAction && attackAction.isRunning()) {
+                    const clipDuration = attackAction._clip.duration;
+                    const currentTime = attackAction.time;
+                    
+                    // Animation progress (0-1)
+                    const progress = (currentTime % clipDuration) / clipDuration;
+                    
+                    // Deal damage at specific point in animation
+                    if (progress >= ATTACK_DAMAGE_POINT && !z.damageDealt) {
+                      // Random damage
+                      const actualDamage = zombieDamage + Math.floor(Math.random() * (zombieDamageVariation * 2 + 1)) - zombieDamageVariation;
+                      
+                      // Apply damage to player
+                      damagePlayer(actualDamage);
+                      
+                      // Mark damage as dealt
+                      z.damageDealt = true;
+                      
+                      // Increment attack counter
+                      z.attackCount++;
+                      z.lastAttackTime = now;
+                    }
+                    
+                    // Reset flag at start of animation for next cycle
+                    if (progress < 0.1 && z.damageDealt) {
+                      z.damageDealt = false;
+                    }
                   }
                 }
+                
+                // Zombie always turns toward player when attacking
+                z.mesh.lookAt(cameraYaw.position.x, z.mesh.position.y, cameraYaw.position.z);
               }
-              
-              // Зомби всегда поворачивается в сторону игрока при атаке
-              z.mesh.lookAt(cameraYaw.position.x, z.mesh.position.y, cameraYaw.position.z);
             }
+            // *** ORIGINAL WAYPOINT CODE ENDS HERE ***
           }
-        }
-        
-        // Обновляем позицию полоски здоровья зомби
-        if (z.healthBar.style.display === 'block' || z.needPositionUpdate) { 
-          const sp = toScreenPosition(z.anchorPoint, camera); 
-          const camPos = camera.getWorldPosition(new THREE.Vector3()), ap = new THREE.Vector3(); 
-          z.anchorPoint.getWorldPosition(ap); 
-          const dist = camPos.distanceTo(ap); 
-          const scale = calculateScale(dist); 
-          z.healthBar.style.left = (sp.x - 20) + 'px'; 
-          z.healthBar.style.top = (sp.y - 15) + 'px'; 
-          z.healthBar.style.transform = `scale(${scale})`; 
           
-          // Уменьшаем счетчик кадров принудительного обновления
-          if (z.needPositionUpdate && z.positionUpdateFrames > 0) {
-            z.positionUpdateFrames--;
-            if (z.positionUpdateFrames <= 0) {
-              z.needPositionUpdate = false;
+          // Update zombie health bar position (for both waypoint and direct zombies)
+          if (z.healthBar.style.display === 'block' || z.needPositionUpdate) { 
+            const sp = toScreenPosition(z.anchorPoint, camera); 
+            const camPos = camera.getWorldPosition(new THREE.Vector3()), ap = new THREE.Vector3(); 
+            z.anchorPoint.getWorldPosition(ap); 
+            const dist = camPos.distanceTo(ap); 
+            const scale = calculateScale(dist); 
+            z.healthBar.style.left = (sp.x - 20) + 'px'; 
+            z.healthBar.style.top = (sp.y - 15) + 'px'; 
+            z.healthBar.style.transform = `scale(${scale})`; 
+            
+            // Decrease force update frame counter
+            if (z.needPositionUpdate && z.positionUpdateFrames > 0) {
+              z.positionUpdateFrames--;
+              if (z.positionUpdateFrames <= 0) {
+                z.needPositionUpdate = false;
+              }
             }
-          }
-        } 
+          } 
+        }
       }); 
       
-      // Обновление эффекта виньетки при уроне
+      // Update vignette effect when damaged
       if (damageVignette) {
-        // Плавное затухание виньетки
+        // Smooth vignette fade-out
         if (vignetteOpacity > 0) {
           vignetteOpacity = Math.max(0, vignetteOpacity - (vignetteDecayRate * delta));
           
-          // Дополнительная пульсация при низком здоровье
+          // Additional pulsing at low health
           if (playerHealth < lowHealthThreshold) {
             if (!isFinalDamageActive) {
               isFinalDamageActive = true;
               finalDamagePulseTime = 0;
             }
             
-            // Создаем эффект пульсации при низком здоровье
+            // Create pulsing effect at low health
             finalDamagePulseTime += delta * finalDamagePulseRate;
             const pulseValue = Math.sin(finalDamagePulseTime * Math.PI) * 0.15;
             damageVignette.style.opacity = Math.max(0.2, vignetteOpacity + pulseValue);
@@ -7078,7 +8190,7 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
             damageVignette.style.opacity = vignetteOpacity;
           }
         } else if (isFinalDamageActive && playerHealth < lowHealthThreshold) {
-          // Продолжаем пульсацию при низком здоровье даже когда основной эффект затух
+          // Continue pulsing at low health even when main effect has faded
           finalDamagePulseTime += delta * finalDamagePulseRate;
           const pulseValue = Math.sin(finalDamagePulseTime * Math.PI) * 0.15;
           damageVignette.style.opacity = Math.max(0, 0.1 + pulseValue);
@@ -7089,45 +8201,38 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
       
       renderer.render(scene, camera); 
     }
-
+// 1. Модифицируем функцию createWaypointsForZombie для более равномерного распределения
     function createWaypointsForZombie(startPosition) {
       // Определяем, с какой стороны появился зомби
       const isRightSide = startPosition.x > 0;
       
-      // Создаем промежуточные точки в зависимости от стороны появления
+      // Создаем массив путевых точек
       const waypoints = [];
       
-      // Добавляем первую промежуточную точку
-      // Для правого зомби - движение влево
-      // Для левого зомби - движение вправо
-      if (isRightSide) {
-        // Зомби справа - двигается сначала влево
-        waypoints.push({ 
-          x: startPosition.x - 4.5, // Шаг влево
-          z: startPosition.z + 2    // Небольшой шаг вперед
-        });
-      } else {
-        // Зомби слева - двигается сначала вправо
-        waypoints.push({
-          x: startPosition.x + 3.5, // Шаг вправо 
-          z: startPosition.z + 2    // Небольшой шаг вперед
-        });
-      }
-      
-      // Добавляем вторую промежуточную точку - ближе к центру
+      // Начальная точка (где зомби появляется)
       waypoints.push({
-        x: 0, // Центральная часть карты
-        z: startPosition.z + 4 // Продвижение вперед
+        x: startPosition.x,
+        z: startPosition.z
       });
       
-      // Последняя точка - позиция игрока (будет динамически обновляться)
+      // Добавляем промежуточную точку с горизонтальным случайным смещением
+      const midOffset = (Math.random() * 2 - 1) * 0.04; // Генерируем смещение от -1 до 1
+      waypoints.push({ 
+        x: midOffset * 3, // Умножаем на 3 для увеличения разброса
+        z: startPosition.z + 0    // Продвижение вперед
+      });
+      
+      // Последняя точка - чуть в стороне от игрока
+      // Случайное смещение от -1 до 1 по оси X относительно игрока
+      const finalOffset = (Math.random() * 2 - 1) * 0.04; // от -1 до 1
       waypoints.push({
-        x: cameraYaw.position.x,
+        x: cameraYaw.position.x + finalOffset,
         z: cameraYaw.position.z
       });
       
       return waypoints;
     }
+
     function computeSkinnedBox(sm) { 
       const pos = sm.geometry.attributes.position, vec = new THREE.Vector3(), b = new THREE.Box3().makeEmpty(); 
       for (let i = 0; i < pos.count; i++) { 
@@ -7193,6 +8298,254 @@ window.imgBase64_muzzle = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAQAAAAE
     // Делаем функции доступными глобально
     window.adjustMap = adjustMap;
     window.resetMap = resetMap;
+    // Очень простая система последовательного спавна зомби
+
+    // Отключаем автоматический спавн зомби при инициализации
+    const originalInitFrozenScene = initFrozenScene;
+      window.initFrozenScene = function() {
+        if (!assetsLoaded) return;
+        
+        // Add temporary weapon if hands not loaded yet
+        if (!hands) {
+          const weapon = new THREE.Group();
+          const barrel = new THREE.Mesh(
+            new THREE.BoxGeometry(0.1,0.1,0.4),
+            new THREE.MeshStandardMaterial({ color:0x333333 })
+          );
+          barrel.position.set(0,0,-0.3);
+          weapon.add(barrel);
+          weapon.position.set(0.3,-0.3,-0.5);
+          weapon.name = "tempWeapon";
+          camera.add(weapon);
+        }
+        
+        // MAIN CHANGE HERE:
+        // Instead of directly calling createZombiesDirectly, we use the zombie system
+        console.log("Pre-spawning first wave zombies (frozen)");
+        
+        // If no zombies exist yet, spawn them
+        if (zombies.length === 0) {
+          // Use spawnZombiesInLine directly instead of through the system
+          // to avoid setting the firstWaveSpawned flag
+          window.spawnZombiesInLine(4, 1.5, 1.5);
+          console.log("First wave of zombies pre-spawned successfully");
+        } else {
+          console.log("Zombies already exist, not spawning again");
+        }
+        
+        // Apply initial animation for hands and update mixer once
+        if (handsMixer && handAnimations["Arms_Idle"]) {
+          // Stop all current animations
+          for (let action of Object.values(handAnimations)) {
+            action.stop();
+          }
+          
+          // Set Idle animation
+          handAnimations["Arms_Idle"].reset();
+          handAnimations["Arms_Idle"].setEffectiveWeight(1);
+          handAnimations["Arms_Idle"].play();
+          
+          // Update mixer once to apply initial pose
+          handsMixer.update(0.01);
+        }
+        
+        // Render scene once for display
+        renderer.render(scene, camera);
+        
+        console.log("Frozen scene initialized with pre-loaded zombies");
+      };
+
+    // Простая система проверки и спавна зомби
+    window.simpleZombieSystem = {
+      // State flags
+      firstWaveSpawned: false,
+      secondWaveSpawned: false,
+      checkingStarted: false,
+      
+      // Spawn first wave - linear zombies
+      spawnFirstWave: function() {
+        console.log("Request to spawn first wave");
+        
+        // Check if there are already preloaded zombies
+        const preloadedZombiesCount = zombies.filter(z => z && z.isPreloaded).length;
+        
+        if (preloadedZombiesCount > 0) {
+          console.log(`Found ${preloadedZombiesCount} preloaded zombies, not creating new ones`);
+          this.firstWaveSpawned = true;
+          return;
+        }
+        
+        // Check for any existing zombies
+        const existingZombies = zombies.filter(z => z && z.mesh && z.hp > 0).length;
+        
+        if (existingZombies > 0) {
+          console.log(`Already have ${existingZombies} zombies in scene, not spawning first wave again`);
+        } else {
+          // If no zombies, call function to spawn zombies in line
+          console.log("No existing zombies found, spawning first wave");
+          window.spawnZombiesInLine(3, 2, 1.5);
+        }
+        
+        this.firstWaveSpawned = true;
+      },
+      
+      // Spawn second wave - direct zombies
+      spawnSecondWave: function() {
+        console.log("Spawning second wave: direct zombies");
+        
+        // First clear all existing zombies
+        window.clearAllZombies();
+        
+        // Based on your code analysis, switchToDirectZombieLoading
+        // calls createZombiesDirectly, which already creates zombies
+        window.switchToDirectZombieLoading();
+        
+        this.secondWaveSpawned = true;
+      },
+      
+      // Start checking remaining zombies from first wave
+      startChecking: function() {
+        if (this.checkingStarted) return;
+        this.checkingStarted = true;
+        
+        console.log("Starting to check count of remaining zombies");
+        
+        // Start check interval
+        this.checkInterval = setInterval(() => {
+          // Only check if first wave is spawned but second isn't yet
+          if (this.firstWaveSpawned && !this.secondWaveSpawned) {
+            // Count living zombies
+            let aliveZombiesCount = 0;
+            for (let i = 0; i < zombies.length; i++) {
+              const zombie = zombies[i];
+              if (zombie && zombie.mesh && zombie.hp > 0) {
+                aliveZombiesCount++;
+              }
+            }
+            
+            console.log(`Check: living zombies: ${aliveZombiesCount}`);
+            
+            // If all zombies are killed, start second wave
+            if (aliveZombiesCount === 0) {
+              console.log("All first wave zombies killed! Starting second wave in 3 seconds...");
+              
+              // Stop check interval
+              clearInterval(this.checkInterval);
+              this.checkingStarted = false;
+              
+              // Start second wave with delay
+              setTimeout(() => {
+                this.spawnSecondWave();
+              }, 1000 ); // 3 seconds between waves
+            }
+          }
+        }, 1000); // Check every second
+      }
+    };
+    // Запускаем систему при старте игры
+    const originalStartGame = startGame;
+    startGame = function() {
+      // "Размораживаем" зомби ПЕРЕД вызовом оригинальной функции startGame
+      console.log("Размораживаем предзагруженных зомби...");
+      
+      // Для каждого зомби восстанавливаем скорость анимации и движения немедленно
+      for (let i = 0; i < zombies.length; i++) {
+        const zombie = zombies[i];
+        
+        if (zombie && zombie.isPreloaded) {
+          // Восстанавливаем скорость анимации
+          if (zombie.mixer && zombie.originalTimeScale !== undefined) {
+            zombie.mixer.timeScale = zombie.originalTimeScale;
+            // Обновляем миксер сразу, чтобы анимация начала играть
+            zombie.mixer.update(0.01);
+          }
+          
+          // Восстанавливаем скорость движения
+          if (zombie.originalMoveSpeed !== undefined) {
+            zombie.moveSpeed = zombie.originalMoveSpeed;
+          }
+          
+          // Удаляем флаг предзагрузки
+          delete zombie.isPreloaded;
+        }
+      }
+      
+      // Помечаем первую волну как запущенную
+      simpleZombieSystem.firstWaveSpawned = true;
+      
+      // Теперь вызываем оригинальную функцию
+      originalStartGame.apply(this, arguments);
+      
+      // Запускаем систему проверки для запуска второй волны без задержки
+      simpleZombieSystem.startChecking();
+      
+      console.log("Зомби полностью размарожены, система следит за их уничтожением.");
+    };
+
+    // Добавляем интерфейс управления через консоль
+    window.zombieControls = {
+      // Запуск первой волны
+      startFirstWave: function() {
+        // Очищаем существующих зомби
+        window.clearAllZombies();
+        
+        // Сбрасываем флаги
+        simpleZombieSystem.firstWaveSpawned = false;
+        simpleZombieSystem.secondWaveSpawned = false;
+        
+        // Останавливаем интервал проверки, если он был
+        if (simpleZombieSystem.checkInterval) {
+          clearInterval(simpleZombieSystem.checkInterval);
+          simpleZombieSystem.checkingStarted = false;
+        }
+        
+        // Запускаем первую волну
+        simpleZombieSystem.spawnFirstWave();
+        
+        // Запускаем проверку для перехода ко второй волне
+        simpleZombieSystem.startChecking();
+        
+        return "Первая волна запущена";
+      },
+      
+      // Запуск второй волны
+      startSecondWave: function() {
+        // Запускаем только вторую волну
+        simpleZombieSystem.firstWaveSpawned = true;
+        simpleZombieSystem.secondWaveSpawned = false;
+        simpleZombieSystem.spawnSecondWave();
+        
+        // Останавливаем интервал проверки, если он был
+        if (simpleZombieSystem.checkInterval) {
+          clearInterval(simpleZombieSystem.checkInterval);
+          simpleZombieSystem.checkingStarted = false;
+        }
+        
+        return "Вторая волна запущена";
+      },
+      
+      // Запуск "как при нажатии F"
+      pressF: function() {
+        // Вызываем те же функции, что и при нажатии F
+        window.switchToDirectZombieLoading();
+        window.spawnZombiesInLine(3, 2, 1, 'walk');
+        
+        return "Нажата виртуальная кнопка F";
+      },
+      
+      // Получение текущего статуса
+      status: function() {
+        return {
+          firstWaveSpawned: simpleZombieSystem.firstWaveSpawned,
+          secondWaveSpawned: simpleZombieSystem.secondWaveSpawned,
+          isCheckingRunning: simpleZombieSystem.checkingStarted,
+          aliveZombies: zombies.filter(z => z && z.mesh && z.hp > 0).length
+        };
+      }
+    };
+
+    console.log("Простая система последовательного спавна зомби загружена");
+    console.log("Сначала появятся зомби линейного спавна, затем - direct зомби");
   </script>
 
 </body></html>
