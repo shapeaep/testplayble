@@ -5973,7 +5973,7 @@ function initLoadingManager() {
         mixer,
         box,
         helper,
-        hp: 200,
+        hp: 175,
         healthBar: hb,
         healthFill: hf,
         anchorPoint: anchor,
@@ -6417,7 +6417,7 @@ function initLoadingManager() {
             mixer,
             box,
             helper,
-            hp: 200,
+            hp: 175,
             healthBar: hb,
             healthFill: hf,
             anchorPoint: anchor,
@@ -7112,11 +7112,19 @@ function initLoadingManager() {
       // Добавляем звуковой эффект (если есть)
       playPlayerDamageSound();
       
+      // НОВОЕ: Проверяем здоровье для запуска CTA
+      if (playerHealth <= 70 && !lowHealthWeaponSwitchTriggered && !weaponSwitchInitiated) {
+        console.log("Здоровье упало ниже 70! Запускаем смену оружия...");
+        lowHealthWeaponSwitchTriggered = true;
+        initiateWeaponSwitch();
+      }
+      
       // Проверяем, жив ли игрок
       if (playerHealth <= 0) {
         playerDeath();
       }
     }
+
 
     function showDamageVignette() {
       // Сильнее проявляем виньетку при каждом ударе
@@ -7619,7 +7627,7 @@ function initLoadingManager() {
         mixer,
         box,
         helper,
-        hp: 300,
+        hp: 175,
         healthBar: hb,
         healthFill: hf,
         anchorPoint: anchor,
@@ -7834,7 +7842,7 @@ function initLoadingManager() {
           mixer,
           box,
           helper,
-          hp: 300,
+          hp: 175,
           healthBar: hb,
           healthFill: hf,
           anchorPoint: anchor,
@@ -8675,6 +8683,14 @@ function initLoadingManager() {
       if (totalInteractions >= 7 && !interactionWeaponSwitchTriggered) {
         interactionWeaponSwitchTriggered = true;
         console.log(`Достигнуто ${totalInteractions} взаимодействий, запускаем смену оружия!`);
+        initiateWeaponSwitch();
+        return true;
+      }
+      
+      // Проверка низкого здоровья
+      if (playerHealth <= 70 && !lowHealthWeaponSwitchTriggered) {
+        lowHealthWeaponSwitchTriggered = true;
+        console.log("Здоровье ниже 70%, запускаем смену оружия!");
         initiateWeaponSwitch();
         return true;
       }
